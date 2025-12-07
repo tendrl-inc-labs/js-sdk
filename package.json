@@ -1,0 +1,62 @@
+{
+  "name": "tendrl",
+  "version": "0.1.0",
+  "description": "A modern JavaScript/React SDK for Tendrl messaging with dynamic batching, automatic message checking, and offline storage",
+  "main": "src/utils/TendrlClient.js",
+  "module": "src/utils/TendrlClient.js",
+  "type": "module",
+  "files": [
+    "src/",
+    "README.md",
+    "LICENSE"
+  ],
+  "exports": {
+    ".": {
+      "import": "./src/utils/TendrlClient.js",
+      "require": "./src/utils/TendrlClient.js"
+    },
+    "./hooks": {
+      "import": "./src/hooks/useTendrlClient.js",
+      "require": "./src/hooks/useTendrlClient.js"
+    },
+    "./utils": {
+      "import": "./src/utils/TendrlClient.js",
+      "require": "./src/utils/TendrlClient.js"
+    },
+    "./storage": {
+      "import": "./src/utils/IndexedDBStorage.js",
+      "require": "./src/utils/IndexedDBStorage.js"
+    }
+  },
+  "keywords": [
+    "tendrl",
+    "messaging",
+    "sdk",
+    "real-time",
+    "offline-storage",
+    "batching",
+    "react"
+  ],
+  "author": "Tendrl, Inc.",
+  "license": "PROPRIETARY",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tendrl-inc/clients.git",
+    "directory": "tendrl_js_sdk"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "peerDependencies": {
+    "react": ">=18.0.0"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    }
+  },
+  "browser": {
+    "./src/utils/TendrlClient.js": "./src/utils/TendrlClient.js"
+  }
+}
+
