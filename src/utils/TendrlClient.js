@@ -3,6 +3,8 @@
 
 import IndexedDBStorage from './IndexedDBStorage.js';
 
+const VERSION = "0.1.0";
+
 class TendrlClient {
     constructor({
         apiBaseUrl = 'https://app.tendrl.com/api',
@@ -241,6 +243,7 @@ class TendrlClient {
                 headers: {
                     'Authorization': `Bearer ${this.apiKey}`,
                     'Content-Type': 'application/json',
+                    'User-Agent': `tendrl-js-sdk/${VERSION}`,
                 },
                 body: JSON.stringify(message),
                 signal: controller.signal,
@@ -286,6 +289,7 @@ class TendrlClient {
                 headers: {
                     'Authorization': `Bearer ${this.apiKey}`,
                     'Content-Type': 'application/json',
+                    'User-Agent': `tendrl-js-sdk/${VERSION}`,
                 },
                 body: JSON.stringify(messages),
                 signal: controller.signal,
@@ -335,6 +339,7 @@ class TendrlClient {
                     headers: {
                         'Authorization': `Bearer ${this.apiKey}`,
                         'Content-Type': 'application/json',
+                        'User-Agent': `tendrl-js-sdk/${VERSION}`,
                     },
                     signal: controller.signal,
                 }
@@ -508,6 +513,7 @@ class TendrlClient {
                 method: 'HEAD',
                 headers: {
                     'Authorization': `Bearer ${this.apiKey}`,
+                    'User-Agent': `tendrl-js-sdk/${VERSION}`,
                 },
                 signal: controller.signal,
             });
@@ -534,6 +540,7 @@ class TendrlClient {
                 headers: {
                     'Authorization': `Bearer ${this.apiKey}`,
                     'Content-Type': 'application/json',
+                    'User-Agent': `tendrl-js-sdk/${VERSION}`,
                 },
                 body: JSON.stringify({ online }),
                 signal: controller.signal,
