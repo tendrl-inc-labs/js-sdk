@@ -222,6 +222,41 @@ Sets the maximum number of messages to retrieve per check.
 client.setMessageCheckLimit(10); // Get up to 10 messages per check
 ```
 
+#### `getState()`
+
+Gets the entity's current state table.
+
+```javascript
+const state = await client.getState();
+// Returns the state table object, or null if unavailable
+```
+
+#### `updateState(data, tags)`
+
+Merges data into the entity's state table (PATCH - only updates specified keys).
+
+```javascript
+// Simple update
+await client.updateState({ temperature: 23.5, humidity: 60 });
+
+// With tags (triggers flows/webhooks associated with those tags)
+await client.updateState({ status: 'active' }, ['device', 'status']);
+```
+
+#### `replaceState(data, tags)`
+
+Replaces the entire state table (PUT - overwrites all existing keys).
+
+```javascript
+await client.replaceState({ temperature: 23.5, humidity: 60 });
+```
+
+**State Table Notes:**
+- `updateState` merges keys (existing keys not in `data` are preserved)
+- `replaceState` overwrites the entire table
+- When `tags` are provided, the body is sent as `{data: {...}, tags: [...]}` to trigger associated flows
+- Returns `true` on success, `false` on failure
+
 #### `checkConnectionState()`
 
 Checks the current connection state and returns true if connected, false otherwise.
@@ -296,12 +331,12 @@ await client.sendHeartbeat({
 // Set up callback to handle incoming messages
 function messageHandler(message) {
     // Process incoming message
-    // Message format matches Python SDK: {msg_type, data, context: {tags}, source, timestamp, dest, request_id}
+    // Message format matches Python SDK: {msg_type, data, tags, source, timestamp, dest}
     console.log(`Received: ${message.msg_type} from ${message.source}`);
     
     // Access message data
     const data = message.data;
-    const tags = message.context?.tags || [];
+    const tags = message.tags || [];
     
     // Return true to indicate successful processing
     // Return false if processing failed (won't stop other messages)
@@ -327,18 +362,11 @@ client.checkMessages(5);
 |-------|------|-------------|----------|
 | `msg_type` | `string` | Message type identifier (e.g., "command", "notification", "alert") | ✅ Yes |
 | `source` | `string` | Sender's resource path (set by server) | ✅ Yes |
-| `dest` | `string` | Destination entity identifier | ❌ Optional |
 | `timestamp` | `string` | RFC3339 timestamp (set by server) | ✅ Yes |
 | `data` | `any` | The actual message payload (can be any JSON type) | ✅ Yes |
-| `context` | `object` | Message metadata | ❌ Optional |
-| `request_id` | `string` | Request identifier (if message was a request) | ❌ Optional |
+| `tags` | `list` | Message tags | ❌ Optional |
 
-### Message Context Structure
 
-| Field | Type | Description | Required |
-|-------|------|-------------|----------|
-| `tags` | `string[]` | Message tags for categorization | ❌ Optional |
-| `dynamicActions` | `object` | Server-side validation results | ❌ Optional |
 
 ### Message Checking How It Works
 

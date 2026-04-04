@@ -378,18 +378,19 @@ class TendrlClient {
 
     // Transform CheckMessage format to Message format (matching Python SDK)
     transformCheckMessage(checkMsg) {
+        // Required fields per IncomingMessage Structure
         const message = {
             msg_type: checkMsg.msg_type || "command",
-            data: checkMsg.data || {},
             source: checkMsg.source || "",
             timestamp: checkMsg.timestamp || new Date().toISOString(),
+            data: checkMsg.data || {},
         };
 
-        // Move tags to context if they exist
-        if (checkMsg.tags && Array.isArray(checkMsg.tags) && checkMsg.tags.length > 0) {
-            message.context = {
-                tags: checkMsg.tags,
-            };
+        // Tags at top level (optional per IncomingMessage Structure)
+        // Handle tags from top level or context (for backward compatibility)
+        const tags = checkMsg.tags || (checkMsg.context && checkMsg.context.tags);
+        if (tags && Array.isArray(tags) && tags.length > 0) {
+            message.tags = tags;
         }
 
         // Add optional fields
@@ -561,6 +562,133 @@ class TendrlClient {
             if (this.debug) {
                 console.warn(`Error updating entity status: ${error.message}`);
             }
+        }
+    }
+
+    // ==================== State Table ====================
+
+    // Get the entity's state table
+    async getState() {
+        try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+            const response = await fetch(`${this.apiBaseUrl}/entities/status-table`, {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${this.apiKey}`,
+                    'Content-Type': 'application/json',
+                    'User-Agent': `tendrl-js-sdk/${VERSION}`,
+                },
+                signal: controller.signal,
+            });
+
+            clearTimeout(timeoutId);
+
+            if (response.status === 200) {
+                const result = await response.json();
+                if (this.debug) {
+                    console.log("State table retrieved successfully");
+                }
+                return result.statusTable;
+            } else {
+                if (this.debug) {
+                    const errorText = await response.text();
+                    console.warn(`Failed to get state table: ${response.status} - ${errorText}`);
+                }
+                return null;
+            }
+        } catch (error) {
+            if (this.debug) {
+                console.error(`Error getting state table: ${error.message}`);
+            }
+            return null;
+        }
+    }
+
+    // Merge data into the entity's state table
+    async updateState(data, tags = null) {
+        try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+            const body = (tags && Array.isArray(tags) && tags.length > 0)
+                ? { data: data, tags: tags }
+                : data;
+
+            const response = await fetch(`${this.apiBaseUrl}/entities/status-table`, {
+                method: 'PATCH',
+                headers: {
+                    'Authorization': `Bearer ${this.apiKey}`,
+                    'Content-Type': 'application/json',
+                    'User-Agent': `tendrl-js-sdk/${VERSION}`,
+                },
+                body: JSON.stringify(body),
+                signal: controller.signal,
+            });
+
+            clearTimeout(timeoutId);
+
+            if (response.status === 200) {
+                if (this.debug) {
+                    console.log("State table updated successfully");
+                }
+                return true;
+            } else {
+                if (this.debug) {
+                    const errorText = await response.text();
+                    console.warn(`Failed to update state table: ${response.status} - ${errorText}`);
+                }
+                return false;
+            }
+        } catch (error) {
+            if (this.debug) {
+                console.error(`Error updating state table: ${error.message}`);
+            }
+            return false;
+        }
+    }
+
+    // Replace the entity's state table
+    async replaceState(data, tags = null) {
+        try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+            const body = (tags && Array.isArray(tags) && tags.length > 0)
+                ? { data: data, tags: tags }
+                : data;
+
+            const response = await fetch(`${this.apiBaseUrl}/entities/status-table`, {
+                method: 'PUT',
+                headers: {
+                    'Authorization': `Bearer ${this.apiKey}`,
+                    'Content-Type': 'application/json',
+                    'User-Agent': `tendrl-js-sdk/${VERSION}`,
+                },
+                body: JSON.stringify(body),
+                signal: controller.signal,
+            });
+
+            clearTimeout(timeoutId);
+
+            if (response.status === 200) {
+                if (this.debug) {
+                    console.log("State table replaced successfully");
+                }
+                return true;
+            } else {
+                if (this.debug) {
+                    const errorText = await response.text();
+                    console.warn(`Failed to replace state table: ${response.status} - ${errorText}`);
+                }
+                return false;
+            }
+        } catch (error) {
+            if (this.debug) {
+                console.error(`Error replacing state table: ${error.message}`);
+            }
+            return false;
         }
     }
 

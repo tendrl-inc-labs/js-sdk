@@ -75,9 +75,9 @@ const APIDemo = () => {
                     messages.map((msg, index) => (
                         <div key={index} style={styles.message}>
                             <strong>{msg.msg_type || 'message'}:</strong> {JSON.stringify(msg.data, null, 2)}
-                            {msg.context?.tags && (
+                            {msg.tags && msg.tags.length > 0 && (
                                 <div style={styles.tags}>
-                                    Tags: {msg.context.tags.join(', ')}
+                                    Tags: {msg.tags.join(', ')}
                                 </div>
                             )}
                         </div>
