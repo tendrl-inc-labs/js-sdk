@@ -1,6 +1,6 @@
 # Tendrl JavaScript SDK
 
-[![Version](https://img.shields.io/badge/version-0.1.0-blue.svg)](https://github.com/tendrl-inc/clients/tendrl_js_sdk)
+[![Version](https://img.shields.io/badge/version-0.1.0-blue.svg)](https://github.com/tendrl-inc-labs/js-sdk)
 [![Node.js Version](https://img.shields.io/badge/node.js-16+-339933.svg)](https://nodejs.org/)
 [![React Version](https://img.shields.io/badge/react-18+-61DAFB.svg)](https://reactjs.org/)
 [![License](https://img.shields.io/badge/license-Proprietary-red.svg)](LICENSE)
@@ -325,42 +325,49 @@ await client.sendHeartbeat({
 - All values must be in bytes and non-negative (≥ 0) if provided
 - The heartbeat message is sent immediately (bypasses queue) and waits for server response
 
-### Message Callbacks
+### Inbound Message Routing
+
+Route incoming messages with `client.on()`:
 
 ```javascript
-// Set up callback to handle incoming messages
-function messageHandler(message) {
-    // Process incoming message
-    // Message format matches Python SDK: {msg_type, data, tags, source, timestamp, dest}
-    console.log(`Received: ${message.msg_type} from ${message.source}`);
-    
-    // Access message data
-    const data = message.data;
-    const tags = message.tags || [];
-    
-    // Return true to indicate successful processing
-    // Return false if processing failed (won't stop other messages)
+client.on({ tag: 'ai-response' }, (message) => {
+    console.log('AI:', message.data);
     return true;
-}
+});
 
-// Set callback (automatic message checking will start if client is running)
-client.setMessageCallback(messageHandler);
+client.on({ tags: ['alert', 'anomaly'] }, (message) => {
+    console.log('Alert:', message.data);
+    return true;
+});
 
-// Configure checking behavior (optional)
-client.setMessageCheckRate(5000); // Check every 5 seconds (default: 3000ms)
-client.setMessageCheckLimit(10);  // Max messages per check (default: 1)
+client.onDefault((message) => {
+    console.log('Unhandled:', message.msg_type, message.tags);
+    return true;
+});
 
-// Manual message check
-client.checkMessages(5);
+client.setMessageCheckRate(5000);
+client.setMessageCheckLimit(10);
 ```
 
-**Automatic Message Checking**: When a callback is set and the client is running, messages are automatically checked at the configured interval (`checkMsgRate`). This matches the Python SDK's behavior.
+`setMessageCallback` remains available as a catch-all fallback for unmatched messages.
+
+### Inbound state (`onState`)
+
+Poll `GET /entities/status-table` at the same interval as messages. The handler fires when the table changes (not on the first poll):
+
+```javascript
+client.onState((state) => {
+    console.log('State:', state);
+});
+```
+
+`setStateCallback` remains available as a catch-all fallback.
 
 ### IncomingMessage Structure
 
 | Field | Type | Description | Required |
 |-------|------|-------------|----------|
-| `msg_type` | `string` | Message type identifier (e.g., "command", "notification", "alert") | ✅ Yes |
+| `msg_type` | `string` | Message type identifier (e.g., "publish", "notification", "alert") | ✅ Yes |
 | `source` | `string` | Sender's resource path (set by server) | ✅ Yes |
 | `timestamp` | `string` | RFC3339 timestamp (set by server) | ✅ Yes |
 | `data` | `any` | The actual message payload (can be any JSON type) | ✅ Yes |

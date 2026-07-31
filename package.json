@@ -41,7 +41,7 @@
   "license": "PROPRIETARY",
   "repository": {
     "type": "git",
-    "url": "https://github.com/tendrl-inc/clients.git",
+    "url": "https://github.com/tendrl-inc-labs/js-sdk.git",
     "directory": "tendrl_js_sdk"
   },
   "engines": {

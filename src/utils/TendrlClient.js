@@ -17,6 +17,7 @@ class TendrlClient {
         maxBatchInterval = 1000, // in ms
         // Common configuration
         callback = null,
+        stateCallback = null,
         maxQueueSize = 1000,
         checkMsgRate = 3000, // Message check frequency in ms (default: 3 seconds)
         checkMsgLimit = 1, // Maximum messages to retrieve per check
@@ -29,6 +30,12 @@ class TendrlClient {
         this.queue = [];
         this.maxQueueSize = maxQueueSize;
         this.callback = callback;
+        this.stateCallback = stateCallback;
+        this._routes = [];
+        this._defaultHandler = null;
+        this._stateHandler = null;
+        this._lastState = null;
+        this._lastStateInitialized = false;
         this.minBatchSize = minBatchSize;
         this.maxBatchSize = maxBatchSize;
         this.minBatchInterval = minBatchInterval;
@@ -77,7 +84,7 @@ class TendrlClient {
         this.startSender();
         
         // Start automatic message checking if callback is set
-        if (this.callback) {
+        if (this._hasInboundHandlers()) {
             this.startMessageChecking();
         }
 
@@ -400,6 +407,163 @@ class TendrlClient {
         return message;
     }
 
+    on({ msgType = null, tag = null, tags = null, tagsAll = null } = {}, handler) {
+        if (typeof handler !== "function") {
+            throw new TypeError("handler must be a function");
+        }
+        this._routes.push({ msgType, tag, tags, tagsAll, handler });
+        if (this._isRunning) {
+            this.startMessageChecking();
+        }
+        return handler;
+    }
+
+    onDefault(handler) {
+        if (typeof handler !== "function") {
+            throw new TypeError("handler must be a function");
+        }
+        this._defaultHandler = handler;
+        if (this._isRunning) {
+            this.startMessageChecking();
+        }
+        return handler;
+    }
+
+    onState(handler) {
+        if (typeof handler !== "function") {
+            throw new TypeError("handler must be a function");
+        }
+        this._stateHandler = handler;
+        if (this._isRunning) {
+            this.startMessageChecking();
+        }
+        return handler;
+    }
+
+    _hasStateHandlers() {
+        return this._stateHandler || this.stateCallback;
+    }
+
+    _hasInboundHandlers() {
+        return this._hasMessageHandlers() || this._hasStateHandlers();
+    }
+
+    _stateSnapshot(state) {
+        return JSON.stringify(state);
+    }
+
+    _dispatchState(state) {
+        if (this._stateHandler) {
+            return this._stateHandler(state);
+        }
+        if (this.stateCallback) {
+            return this.stateCallback(state);
+        }
+    }
+
+    async _fetchStatusTable() {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+        try {
+            const response = await fetch(`${this.apiBaseUrl}/entities/status-table`, {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${this.apiKey}`,
+                    'Content-Type': 'application/json',
+                    'User-Agent': `tendrl-js-sdk/${VERSION}`,
+                },
+                signal: controller.signal,
+            });
+
+            clearTimeout(timeoutId);
+
+            if (response.status === 200) {
+                const result = await response.json();
+                return result.statusTable ?? {};
+            }
+            if (this.debug) {
+                const errorText = await response.text();
+                console.warn(`Failed to get state table: ${response.status} - ${errorText}`);
+            }
+            return null;
+        } catch (error) {
+            clearTimeout(timeoutId);
+            if (this.debug) {
+                console.error(`Error getting state table: ${error.message}`);
+            }
+            return null;
+        }
+    }
+
+    async checkState() {
+        if (!this._hasStateHandlers()) {
+            return;
+        }
+
+        const state = await this._fetchStatusTable();
+        if (state === null) {
+            return;
+        }
+
+        if (this._lastStateInitialized) {
+            if (this._stateSnapshot(state) !== this._stateSnapshot(this._lastState)) {
+                try {
+                    this._dispatchState(state);
+                } catch (error) {
+                    if (this.debug) {
+                        console.error("Error in state handler:", error);
+                    }
+                }
+            }
+        }
+
+        this._lastState = state;
+        this._lastStateInitialized = true;
+    }
+
+    _extractMessageTags(message) {
+        if (message.tags && message.tags.length) {
+            return message.tags;
+        }
+        return (message.context && message.context.tags) || [];
+    }
+
+    _routeMatches(route, message) {
+        if (route.msgType && message.msg_type !== route.msgType) {
+            return false;
+        }
+        const msgTags = this._extractMessageTags(message);
+        if (route.tag && !msgTags.includes(route.tag)) {
+            return false;
+        }
+        if (route.tags && !route.tags.some((t) => msgTags.includes(t))) {
+            return false;
+        }
+        if (route.tagsAll && !route.tagsAll.every((t) => msgTags.includes(t))) {
+            return false;
+        }
+        return true;
+    }
+
+    _hasMessageHandlers() {
+        return this._routes.length > 0 || this._defaultHandler || this.callback;
+    }
+
+    _dispatchMessage(message) {
+        for (const route of this._routes) {
+            if (this._routeMatches(route, message)) {
+                return route.handler(message);
+            }
+        }
+        if (this._defaultHandler) {
+            return this._defaultHandler(message);
+        }
+        if (this.callback) {
+            return this.callback(message);
+        }
+    }
+
     // Handle incoming messages from checkMessages response
     handleCheckMessagesResponse(messages) {
         if (!Array.isArray(messages) || messages.length === 0) {
@@ -410,20 +574,19 @@ class TendrlClient {
             console.log(`Received ${messages.length} message(s) from server`);
         }
 
-        if (!this.callback) {
+        if (!this._hasMessageHandlers()) {
             if (this.debug) {
-                console.warn(`Received ${messages.length} message(s) but no callback is set`);
+                console.warn(`Received ${messages.length} message(s) but no handler is set`);
             }
             return;
         }
 
-        // Transform and process each message
         for (const checkMsg of messages) {
             try {
                 const message = this.transformCheckMessage(checkMsg);
-                
+
                 try {
-                    const result = this.callback(message);
+                    const result = this._dispatchMessage(message);
                     if (result === false && this.debug) {
                         console.warn("Callback returned false for message:", message);
                     }
@@ -446,9 +609,14 @@ class TendrlClient {
             clearInterval(this.messageCheckInterval);
         }
 
-        if (this.callback && this.checkMsgRate > 0) {
-            this.messageCheckInterval = setInterval(() => {
-                this.checkMessages(this.checkMsgLimit);
+        if (this._hasInboundHandlers() && this.checkMsgRate > 0) {
+            this.messageCheckInterval = setInterval(async () => {
+                if (this._hasMessageHandlers()) {
+                    await this.checkMessages(this.checkMsgLimit);
+                }
+                if (this._hasStateHandlers()) {
+                    await this.checkState();
+                }
             }, this.checkMsgRate);
 
             if (this.debug) {
@@ -477,11 +645,21 @@ class TendrlClient {
         }
     }
 
+    setStateCallback(callback) {
+        if (callback && typeof callback !== "function") {
+            throw new TypeError("callback must be a function");
+        }
+        this.stateCallback = callback;
+        if (this._isRunning && callback) {
+            this.startMessageChecking();
+        }
+    }
+
     // Set message check rate
     setMessageCheckRate(rateMs) {
         this.checkMsgRate = rateMs;
         // Restart with new rate if already running
-        if (this._isRunning && this.callback) {
+        if (this._isRunning && this._hasInboundHandlers()) {
             this.startMessageChecking();
         }
     }
@@ -569,41 +747,7 @@ class TendrlClient {
 
     // Get the entity's state table
     async getState() {
-        try {
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 5000);
-
-            const response = await fetch(`${this.apiBaseUrl}/entities/status-table`, {
-                method: 'GET',
-                headers: {
-                    'Authorization': `Bearer ${this.apiKey}`,
-                    'Content-Type': 'application/json',
-                    'User-Agent': `tendrl-js-sdk/${VERSION}`,
-                },
-                signal: controller.signal,
-            });
-
-            clearTimeout(timeoutId);
-
-            if (response.status === 200) {
-                const result = await response.json();
-                if (this.debug) {
-                    console.log("State table retrieved successfully");
-                }
-                return result.statusTable;
-            } else {
-                if (this.debug) {
-                    const errorText = await response.text();
-                    console.warn(`Failed to get state table: ${response.status} - ${errorText}`);
-                }
-                return null;
-            }
-        } catch (error) {
-            if (this.debug) {
-                console.error(`Error getting state table: ${error.message}`);
-            }
-            return null;
-        }
+        return this._fetchStatusTable();
     }
 
     // Merge data into the entity's state table
@@ -689,6 +833,157 @@ class TendrlClient {
                 console.error(`Error replacing state table: ${error.message}`);
             }
             return false;
+        }
+    }
+
+    // ==================== File Transfer ====================
+
+    /**
+     * Upload a file and route it by dest or tags. The file is scanned by Surface
+     * before it becomes downloadable; this resolves with the terminal result.
+     * Pass exactly one of dest / tags:
+     *   - dest: a bare entity name or full "account:region:entity:name" path. A
+     *     same-account entity is a direct transfer; an entity-group dest broadcasts
+     *     to its members; a different-account dest is a cross-account transfer (the
+     *     recipient must have opted in and allowlisted this account).
+     *   - tags: hands the file to matching Strand automations.
+     *
+     * @param {Blob|File|ArrayBuffer|Uint8Array} file - the file bytes
+     * @param {Object} [opts]
+     * @param {string} [opts.filename] - name to use (required for Blob/ArrayBuffer)
+     * @param {string} [opts.dest] - recipient entity / group / cross-account path
+     * @param {string[]} [opts.tags] - routing tags (alternative to dest)
+     * @returns {Promise<Object|null>} {transfer_id, status, mode, ...} or null
+     */
+    async sendFile(file, { filename = '', dest = '', tags = [] } = {}) {
+        try {
+            const form = new FormData();
+            let blob;
+            if (typeof Blob !== 'undefined' && file instanceof Blob) {
+                blob = file;
+                if (!filename && typeof File !== 'undefined' && file instanceof File) {
+                    filename = file.name;
+                }
+            } else {
+                blob = new Blob([file]);
+            }
+            form.append('file', blob, filename || 'file.bin');
+            if (dest) form.append('dest', dest);
+            if (tags && tags.length > 0) form.append('tags', tags.join(','));
+
+            // NOTE: do not set Content-Type — the runtime sets the multipart boundary.
+            const response = await fetch(`${this.apiBaseUrl}/entities/files`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${this.apiKey}`,
+                    'User-Agent': `tendrl-js-sdk/${VERSION}`,
+                },
+                body: form,
+            });
+
+            if (response.status === 200 || response.status === 201) {
+                return await response.json();
+            }
+            if (this.debug) {
+                const errorText = await response.text();
+                console.warn(`sendFile failed: ${response.status} - ${errorText}`);
+            }
+            return null;
+        } catch (error) {
+            if (this.debug) {
+                console.error(`Error sending file: ${error.message}`);
+            }
+            return null;
+        }
+    }
+
+    /**
+     * List clean files available to this entity (the receiver inbox).
+     * @param {number} [limit=50]
+     * @returns {Promise<Array>} array of file metadata dicts (empty on failure)
+     */
+    async checkFiles(limit = 50) {
+        try {
+            const response = await fetch(`${this.apiBaseUrl}/entities/files?limit=${limit}`, {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${this.apiKey}`,
+                    'Content-Type': 'application/json',
+                    'User-Agent': `tendrl-js-sdk/${VERSION}`,
+                },
+            });
+            if (response.status === 200) {
+                const result = await response.json();
+                return result.files || [];
+            }
+            return [];
+        } catch (error) {
+            if (this.debug) {
+                console.error(`Error checking files: ${error.message}`);
+            }
+            return [];
+        }
+    }
+
+    /**
+     * Download a clean file's bytes by transferId. For delete_on_download files
+     * (the default) a successful download consumes the file server-side.
+     * @param {string} transferId
+     * @returns {Promise<Blob|null>}
+     */
+    async downloadFile(transferId) {
+        try {
+            const response = await fetch(`${this.apiBaseUrl}/entities/files/download/${transferId}`, {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${this.apiKey}`,
+                    'User-Agent': `tendrl-js-sdk/${VERSION}`,
+                },
+            });
+            if (response.status === 200) {
+                return await response.blob();
+            }
+            if (this.debug) {
+                const errorText = await response.text();
+                console.warn(`downloadFile failed: ${response.status} - ${errorText}`);
+            }
+            return null;
+        } catch (error) {
+            if (this.debug) {
+                console.error(`Error downloading file: ${error.message}`);
+            }
+            return null;
+        }
+    }
+
+    /**
+     * Re-scan a received cross-account file with this account's own Surface profile,
+     * billed to this (the recipient's) credits. Only the recipient may call it.
+     * @param {string} transferId
+     * @returns {Promise<Object|null>} {recipient_threat_level, blocked, ...} or null
+     */
+    async rescanFile(transferId) {
+        try {
+            const response = await fetch(`${this.apiBaseUrl}/entities/files/${transferId}/rescan`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${this.apiKey}`,
+                    'User-Agent': `tendrl-js-sdk/${VERSION}`,
+                },
+            });
+            if (response.status === 200) {
+                return await response.json();
+            }
+            if (this.debug) {
+                const errorText = await response.text();
+                console.warn(`rescanFile failed: ${response.status} - ${errorText}`);
+            }
+            return null;
+        } catch (error) {
+            if (this.debug) {
+                console.error(`Error rescanning file: ${error.message}`);
+            }
+            return null;
         }
     }
 
