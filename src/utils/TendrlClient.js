@@ -76,16 +76,34 @@ class TendrlClient {
         }
 
         this._isRunning = true;
-        
+
         // Update entity status to online
         this._updateEntityStatus(true);
-        
+
         // Start message sender
         this.startSender();
-        
+
         // Start automatic message checking if callback is set
         if (this._hasInboundHandlers()) {
             this.startMessageChecking();
+        }
+
+        // Drain anything buffered from a previous run. The 30s connectivity
+        // recheck only flushes on a false->true *transition*, which never fires
+        // on a fresh start — so without this, messages stored during an outage
+        // before a page reload would sit in IndexedDB until the next
+        // disconnect/reconnect cycle. Best-effort, fire-and-forget.
+        if (this.storage) {
+            this.storage.getMessageCount()
+                .then((count) => {
+                    if (count > 0) {
+                        if (this.debug) console.log(`Startup: draining ${count} buffered offline messages`);
+                        return this.processOfflineMessages();
+                    }
+                })
+                .catch((error) => {
+                    if (this.debug) console.error(`Startup offline drain failed: ${error}`);
+                });
         }
 
         if (this.debug) console.log("TendrlClient started");
