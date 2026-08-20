@@ -1,0 +1,75 @@
+name: Release
+
+# Publishing to npm happens here and nowhere else. A publish from a laptop picks
+# up whatever is in the working tree, which is how a package ends up on the
+# registry containing a change nobody reviewed — so this is tag-driven and runs
+# from a clean checkout.
+#
+# To cut a release:
+#   1. bump "version" in package.json and merge it
+#   2. git tag v0.1.1 && git push --tags
+#
+# Requires one repository secret, NPM_TOKEN: an npm automation token with
+# publish rights on the "tendrl" package (npm → Access Tokens → Generate →
+# Automation). Automation tokens bypass 2FA, which classic tokens do not, so a
+# classic token will fail here even though it works interactively.
+on:
+  push:
+    tags: ["v*"]
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false   # never cancel a publish mid-flight
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
+
+      # Gate: never publish a broken build.
+      - name: Test
+        run: npm test
+
+      # The tag and the manifest must agree. Without this check, tagging v0.2.0
+      # while package.json still says 0.1.0 publishes 0.1.0 — silently, with a
+      # success tick — and the tag then points at a version that was never
+      # released under that name.
+      - name: Tag must match package version
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          pkg="$(node -p "require('./package.json').version")"
+          if [ "$tag" != "$pkg" ]; then
+            echo "::error::tag $GITHUB_REF_NAME implies version $tag, package.json says $pkg"
+            exit 1
+          fi
+          echo "publishing tendrl@$pkg"
+
+      # Refuse to republish a version that already exists. npm rejects this too,
+      # but it fails deep in the publish with a 403 that reads like an auth
+      # problem; catching it here says what actually happened.
+      - name: Version must be new
+        run: |
+          pkg="$(node -p "require('./package.json').version")"
+          if npm view "tendrl@$pkg" version >/dev/null 2>&1; then
+            echo "::error::tendrl@$pkg is already published; bump the version"
+            exit 1
+          fi
+
+      # Show exactly what would ship. The "files" allowlist in package.json is
+      # easy to get wrong in the direction of publishing too much.
+      - name: Show package contents
+        run: npm pack --dry-run
+
+      - name: Publish
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
