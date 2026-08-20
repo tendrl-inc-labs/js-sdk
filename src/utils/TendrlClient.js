@@ -5,9 +5,33 @@ import IndexedDBStorage from './IndexedDBStorage.js';
 
 const VERSION = "0.1.0";
 
+const DEFAULT_ORIGIN = 'https://app.tendrl.com';
+
+// Resolve the API base from TENDRL_APP_URL when nothing is passed in, matching
+// the Python and Go SDKs: the env var is an ORIGIN ("http://localhost:8000") and
+// the SDK appends /api itself. Without this the base was hardcoded to production
+// and there was no way to point the client at a local stack except by passing
+// apiBaseUrl at every call site.
+//
+// `process` does not exist in a browser, so this is guarded — bundlers that
+// inline process.env still work, and a plain browser falls back to production.
+function defaultApiBaseUrl() {
+    let value = DEFAULT_ORIGIN;
+    try {
+        if (typeof process !== 'undefined' && process.env && process.env.TENDRL_APP_URL) {
+            value = process.env.TENDRL_APP_URL;
+        }
+    } catch (_) { /* no process in this environment — keep the default */ }
+    const trimmed = value.replace(/\/+$/, '');
+    // Accept either a bare origin ("http://192.168.1.50" — append /api) or a full
+    // base URL already ending in /api (nano-agent style), matching how the Go and
+    // Python SDKs read the same variable. One TENDRL_APP_URL works for all of them.
+    return trimmed.endsWith('/api') ? trimmed : `${trimmed}/api`;
+}
+
 class TendrlClient {
     constructor({
-        apiBaseUrl = 'https://app.tendrl.com/api',
+        apiBaseUrl = defaultApiBaseUrl(),
         apiKey,
         debug = false,
         // Batching configuration

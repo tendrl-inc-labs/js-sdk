@@ -1,0 +1,28 @@
+name: CI — JavaScript SDK
+
+on:
+  push:
+    branches: [main, develop]
+    tags: ['v*.*.*']
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 20 is the oldest maintained line with a stable built-in test runner.
+        node-version: ['20', '22']
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      # No dependencies to install: the SDK uses native fetch and the tests use
+      # node:test and node:http, so there is nothing to go stale.
+      - name: Run tests
+        run: npm test

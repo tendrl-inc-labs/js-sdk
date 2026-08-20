@@ -21,8 +21,10 @@ const useTendrlClient = ({
     const clientRef = useRef(null);
 
     useEffect(() => {
-        // Use provided apiBaseUrl or default to production API
-        const baseUrl = apiBaseUrl || 'https://app.tendrl.com/api';
+        // Fall through to TendrlClient's own default, which honours
+        // TENDRL_APP_URL (see defaultApiBaseUrl there) instead of pinning the
+        // hook to production.
+        const baseUrl = apiBaseUrl || undefined;
         const apiKey = process.env.REACT_APP_TENDRL_KEY;
 
         if (!apiKey) {

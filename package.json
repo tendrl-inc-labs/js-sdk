@@ -57,6 +57,8 @@
   },
   "browser": {
     "./src/utils/TendrlClient.js": "./src/utils/TendrlClient.js"
+  },
+  "scripts": {
+    "test": "node --test"
   }
 }
-
