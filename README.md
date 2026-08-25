@@ -43,7 +43,7 @@ For licensing questions, contact: `support@tendrl.com`
 ### NPM (Recommended)
 
 ```bash
-npm install tendrl
+npm install github:tendrl-inc-labs/js-sdk
 ```
 
 ### Manual Installation
