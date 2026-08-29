@@ -1,5 +1,5 @@
 {
-  "name": "tendrl",
+  "name": "@tendrl/contact",
   "version": "0.1.0",
   "description": "A modern JavaScript/React SDK for Tendrl messaging with dynamic batching, automatic message checking, and offline storage",
   "main": "src/utils/TendrlClient.js",
@@ -41,8 +41,7 @@
   "license": "PROPRIETARY",
   "repository": {
     "type": "git",
-    "url": "https://github.com/tendrl-inc/clients.git",
-    "directory": "tendrl_js_sdk"
+    "url": "git+https://github.com/tendrl-inc-labs/contact-js.git"
   },
   "engines": {
     "node": ">=16.0.0"
@@ -57,6 +56,6 @@
   },
   "browser": {
     "./src/utils/TendrlClient.js": "./src/utils/TendrlClient.js"
-  }
+  },
+  "homepage": "https://tendrl.com/docs/contact/sdks/javascript/getting-started/"
 }
-
