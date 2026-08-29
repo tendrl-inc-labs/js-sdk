@@ -2,7 +2,7 @@
 // React hook for TendrlClient
 
 import { useEffect, useRef } from "react";
-import TendrlClient from "../utils/TendrlClient";
+import TendrlClient from "../utils/TendrlClient.js";
 
 const useTendrlClient = ({
     onMessage = null,

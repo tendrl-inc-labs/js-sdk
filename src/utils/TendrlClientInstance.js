@@ -1,6 +1,6 @@
 // src/utils/TendrlClientInstance.js
 
-import TendrlClient from "./TendrlClient";
+import TendrlClient from "./TendrlClient.js";
 
 let instance = null;
 
